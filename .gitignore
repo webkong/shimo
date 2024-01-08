@@ -3,5 +3,6 @@
 
 files*
 .vscode
-shimo
+shimo*
 config*.json
+w*

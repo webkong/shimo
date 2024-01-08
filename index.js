@@ -31,7 +31,6 @@ const desktopHeadersOptions = {
 };
 
 const localFileLists = getLocalFileList(Path.join(config.Path));
-// console.log('🚀 ~ file: index.js:27 ~ localFileLists:', localFileLists);
 localStr = localFileLists.join('');
 
 getFileList(config.Folder, config.Path);
@@ -52,7 +51,7 @@ async function getFileList(folder = '', basePath = '') {
       if (atime > config.Lasttime) {
         if (item.is_folder != 1) {
           // console.log(item.name, item.type, item.updatedAt);
-          const name = item.name;
+          const name = replaceBadChar(item.name);
           const type = getType(item);
           const localFilePath = Path.join(basePath, `${name}.${type}`);
           // 如果type为1，表示不支持导出，跳过
@@ -63,14 +62,15 @@ async function getFileList(folder = '', basePath = '') {
           if (localStr.indexOf(localFilePath) > -1) {
             const stat = fs.statSync(localFilePath);
             // 本地文件更新时间小于石墨文件更新时间
-            if (new Date(item.updated_at).getTime() > new Date(stat.ctime).getTime()) {
+            if (new Date(item.updated_at).getTime() > new Date(stat.mtime).getTime()) {
               console.log('更新:', localFilePath);
             } else {
               console.log('跳过:', localFilePath);
               continue;
             }
+          } else {
+            console.log('新增:', localFilePath);
           }
-          await sleep(config.Sleep);
 
           let res = -1;
           for (let j = 0; j <= config.Retry; j++) {
@@ -78,8 +78,8 @@ async function getFileList(folder = '', basePath = '') {
               console.error('retry ' + j + ' times...');
               await sleep(config.Sleep * 2);
             }
-            res = await createExportTask(item, basePath);
             console.log('开始下载:', localFilePath);
+            res = await createExportTask(item, basePath, localFilePath);
             if (res == 0 || res == 1) {
               break;
             }
@@ -102,7 +102,7 @@ async function getFileList(folder = '', basePath = '') {
   }
 }
 
-async function createExportTask(item, basePath = '') {
+async function createExportTask(item, basePath = '', localFilePath) {
   try {
     let type = '';
     const name = replaceBadChar(item.name);
@@ -146,18 +146,21 @@ async function createExportTask(item, basePath = '') {
     const options = {
       headers: headersOptions,
     };
+    fse.ensureDirSync(basePath);
     await download(downloadUrl, basePath, options);
+    // fs.writeFileSync(`${localFilePath}`, await download(downloadUrl, options));
+    await sleep(config.Sleep);
   } catch (error) {
     console.error('[Error] ' + item.name + ' failed, error: ' + error.message);
+    await sleep(config.Sleep);
     return 3;
   }
   return 0;
 }
 
 function replaceBadChar(fileName) {
-  // 去掉文件名中的无效字符,如 \ / : * ? " < > |
-  fileName = fileName.replace(/[\'\"\\\/\b\f\n\r\t]/g, '_');
-  return fileName;
+  // 正则表达式去掉文件名中的无效字符,如 \ / : * ? " < > |
+  return fileName.replace(/[\/:*?"<>| ]/g, '_')
 }
 
 function getType(item) {
@@ -173,7 +176,8 @@ function getType(item) {
     item.type == 'sheet' ||
     item.type == 'mosheet' ||
     item.type == 'spreadsheet' ||
-    item.type == 'table'
+    item.type == 'table' ||
+    item.type == 'xls'
   ) {
     type = 'xlsx';
   } else if (item.type == 'slide' || item.type == 'presentation') {
